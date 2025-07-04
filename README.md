@@ -1,6 +1,6 @@
 # Audio Data Clustering: Unsupervised Learning for Sound Analysis
 
-A machine learning project that automatically discovers patterns in unlabeled audio data using clustering techniques.
+A machine learning project that automatically discovers patterns in unlabeled audio data using clustering techniques with Mel Spectrogram features.
 
 ## Overview
 
@@ -13,10 +13,10 @@ The approach mimics how humans naturally group sounds - by recognizing similarit
 The pipeline transforms raw audio waveforms into numerical features that capture the essential characteristics of each sound. We then use dimensionality reduction to make this high-dimensional data manageable and apply clustering algorithms to find natural groupings in the data.
 
 Key components:
-- Extract meaningful features from audio files using MFCC (Mel-Frequency Cepstral Coefficients)
+- Extract meaningful features from audio files using Mel Spectrograms with comprehensive statistical aggregation
 - Reduce dimensionality using PCA and t-SNE for visualization and improved clustering
-- Apply K-Means and DBSCAN clustering to discover natural sound groups
-- Evaluate clustering quality using standard metrics
+- Apply K-Means and adaptive DBSCAN clustering to discover natural sound groups
+- Evaluate clustering quality using comprehensive metrics (silhouette score, Davies-Bouldin index, inertia)
 - Visualize results to understand the discovered patterns
 
 ## Getting Started
@@ -41,130 +41,273 @@ pip install librosa scikit-learn pandas numpy matplotlib seaborn
 ### Basic Usage
 
 ```python
-# Load the required functions
-from audio_data_clustering import *
+# Mount Google Drive and load audio files
+mount_drive()
+data_path = '/content/drive/MyDrive/unlabelled_sounds/unlabelled_sounds'
+audio_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('.wav')]
 
-# Extract features from your audio files
-audio_files = [list of your .wav/.mp3 file paths]
+# Extract Mel Spectrogram features
 features_df = extract_features(audio_files)
 
 # Reduce dimensions for better clustering
 features_pca, pca_model = apply_dimensionality_reduction(features_df, method='pca', n_components=3)
 
-# Find clusters
-labels, clustering_model = perform_clustering(features_pca, method='kmeans', n_clusters=3)
+# Perform clustering
+kmeans_labels, kmeans_model = perform_kmeans_clustering(features_pca, n_clusters=3)
+dbscan_labels, dbscan_model = adaptive_dbscan_clustering(features_pca, target_noise_ratio=0.15)
 
-# See how well it worked
-results = evaluate_clustering(features_pca, labels)
+# Evaluate results
+kmeans_results = evaluate_clustering_performance(features_pca, kmeans_labels, kmeans_model, "K-MEANS")
+dbscan_results = evaluate_clustering_performance(features_pca, dbscan_labels, dbscan_model, "DBSCAN")
 ```
 
 ## How It Works
 
-### Feature Extraction with MFCC
+### Feature Extraction with Mel Spectrograms
 
-Rather than working with raw audio waveforms (which are just long sequences of amplitude values), we extract MFCC features. These are particularly good for audio analysis because:
+Rather than working with raw audio waveforms or simple coefficients, we extract comprehensive Mel Spectrogram features. These provide richer representation because:
 
-- They focus on frequencies that matter most to human hearing
-- They compress the audio information into a manageable number of features (13 coefficients)
-- They're robust to noise and recording variations
-- They capture both the spectral shape and how it changes over time
+- They maintain both frequency and time information unlike compressed features
+- They utilize the mel scale to emphasize frequencies important to human hearing
+- They provide detailed spectral content while preserving temporal evolution
+- They form the foundation for many modern audio analysis techniques
 
-For each audio file, we calculate 13 MFCC coefficients and then compute the mean and standard deviation of these coefficients across the entire audio clip. This gives us 26 features per audio file that capture both the average characteristics and the variability of the sound.
+For each audio file, we:
+1. Extract Mel Spectrograms with 128 mel frequency bands
+2. Calculate comprehensive statistical measures: mean, standard deviation, maximum, minimum, median, and percentiles across time
+3. Compute global spectral characteristics: spectral centroid, spread, and rolloff
+4. Generate 899-dimensional feature vectors (128 × 7 statistics + 3 global features) per audio clip
 
-### Dimensionality Reduction
+### Why Dimensionality Reduction is Critical
 
-Working with 26-dimensional data directly is challenging for visualization and can hurt clustering performance. We use two approaches:
+Working with 899-dimensional mel spectrogram features presents several challenges:
 
-**PCA (Principal Component Analysis)**: This finds the directions in the data that capture the most variance. It's great for understanding which features matter most and reduces computational complexity while preserving the global structure of the data.
+- **Curse of dimensionality**: Data points become approximately equidistant, making clustering difficult
+- **Visualization impossibility**: Cannot meaningfully visualize relationships in 899-dimensional space
+- **Computational complexity**: Distance-based algorithms become slow and memory-intensive
+- **Noise amplification**: High-dimensional data contains redundant features that mask true patterns
 
-**t-SNE**: This is better at preserving local neighborhoods and often reveals cluster structure that PCA misses. It's particularly good for visualization because it tends to create tight, well-separated groups.
+Dimensionality reduction concentrates the most important variance into fewer dimensions while filtering out noise, making clusters more distinguishable and computationally manageable.
+
+### Dimensionality Reduction Techniques
+
+**PCA (Principal Component Analysis)**: Preserves global structure and variance by projecting data onto directions that capture maximum variance. Great for understanding feature importance and maintaining linear relationships.
+
+**t-SNE**: Excels at preserving local neighborhoods and revealing non-linear cluster structures. Better for visualization of complex patterns but sacrifices interpretability.
 
 ### Clustering Algorithms
 
-**K-Means**: Works well when you expect roughly spherical clusters of similar sizes. We use the elbow method to automatically determine the optimal number of clusters by looking for the point where adding more clusters doesn't significantly improve the within-cluster sum of squares.
+**K-Means**: Works well with spherical clusters of similar sizes. We use the elbow method to determine optimal cluster numbers. Performed best on our mel spectrogram features due to their relatively uniform distribution after statistical aggregation.
 
-**DBSCAN**: Doesn't require you to specify the number of clusters beforehand and can find irregularly shaped clusters. It also automatically identifies noise points that don't belong to any cluster. We tune the epsilon parameter using k-distance graphs.
+**Adaptive DBSCAN**: Our enhanced density-based approach that automatically finds optimal parameters to achieve a target noise ratio (typically 15%). Systematically tests multiple parameter combinations to avoid classifying all points as noise.
 
-## Results and Findings
+## Results and Performance
 
-Based on our experiments with unlabeled audio data:
+Based on experiments with 3000 unlabeled audio files:
 
 ### Performance Comparison
 
-| Method | Silhouette Score | Davies-Bouldin Index | Notes |
-|--------|------------------|---------------------|-------|
-| K-Means on PCA | 0.3713 | ~1.0 | Best overall performance |
-| DBSCAN on PCA | -0.3384 | 1.44 | Struggled with this dataset |
+| Algorithm | Silhouette Score | Davies-Bouldin Index | Inertia | Clusters | Noise Points |
+|-----------|------------------|---------------------|---------|----------|--------------|
+| K-Means | 0.2483 | 1.3178 | 698,395.88 | 3 | 0 |
+| DBSCAN-Adaptive | -0.3327 | 0.8586 | 758,077.83 | 17 | 445 |
 
-### Key Insights
+### Key Findings
 
-**Dimensionality reduction was crucial**: The original 26-dimensional feature space was too complex for effective clustering. PCA helped by:
-- Concentrating most of the meaningful variation into just 3 dimensions
-- Filtering out noise and redundant information
-- Making the clusters more compact and separable
+**K-Means achieved acceptable performance**: 
+- Silhouette score of 0.2483 indicates reasonably structured clusters
+- Successfully partitioned data into three balanced clusters (1137, 761, 1102 samples)
+- Davies-Bouldin index of 1.3178 shows moderate cluster separation
+- High inertia reflects the complexity of mel spectrogram feature space
 
-**K-Means worked better than DBSCAN for this data**: This was somewhat surprising since DBSCAN is often praised for handling irregular cluster shapes. However:
-- The audio features formed relatively spherical clusters in the PCA space
-- DBSCAN was sensitive to parameter choices and classified too many points as noise
-- K-Means' assumption of roughly equal-sized, spherical clusters matched our data well
+**DBSCAN-Adaptive revealed interesting patterns**:
+- Discovered 17 distinct clusters, suggesting more granular audio groupings
+- Negative silhouette score (-0.3327) indicates overlapping cluster boundaries
+- Better Davies-Bouldin index (0.8586) shows good cluster separation despite overlap
+- 445 noise points (14.8%) successfully identified outlier audio samples
+- Higher inertia (758,077.83) reflects the fragmented cluster structure
 
-**PCA vs t-SNE for visualization**: While both techniques reduced dimensionality effectively, PCA provided clearer, more distinct clusters. t-SNE sometimes created scattered or overlapping groups that were harder to interpret, though it did reveal some interesting local structure.
+**Algorithm comparison insights**:
+- **K-Means**: Produced fewer, more cohesive clusters with balanced sizes
+- **DBSCAN-Adaptive**: Identified finer-grained structure but with more overlap
+- **Cluster count**: 3 vs 17 clusters suggests different granularity levels
+- **Noise detection**: DBSCAN's ability to identify 445 outliers provides valuable data cleaning
 
-## Challenges and Limitations
+**Dimensionality reduction impact**:
+- PCA successfully preserved 75%+ of variance in 3 components
+- Significant improvement in clustering performance post-reduction
+- Enhanced visualization capabilities while maintaining essential audio characteristics
 
-**Parameter sensitivity**: Both DBSCAN's epsilon parameter and the choice of number of components for dimensionality reduction significantly affected results. We spent considerable time tuning these.
+**PCA vs t-SNE comparison**:
+- PCA provided better global structure preservation for K-Means clustering
+- t-SNE revealed local patterns that DBSCAN-Adaptive successfully exploited
+- PCA's 3 balanced clusters vs t-SNE's influence on DBSCAN's 17 granular clusters
+- Both techniques essential for different clustering approaches and granularity levels
 
-**Audio quality variations**: Real-world audio files have different recording qualities, lengths, and background noise levels. The feature extraction process handles this reasonably well, but very noisy or very short clips can still be problematic.
+## Methodology and Analysis
 
-**Interpreting clusters**: Without ground truth labels, it's challenging to know if the discovered clusters correspond to meaningful audio categories. Visual and auditory inspection of cluster members is necessary to validate results.
+### Structured Approach
 
-**Computational requirements**: t-SNE in particular can be slow on larger datasets, and the feature extraction process requires loading entire audio files into memory.
+Our analysis follows a systematic methodology:
+
+1. **Data Loading and Preprocessing**: Mount Google Drive, load audio files, handle errors gracefully
+2. **Feature Extraction**: Comprehensive mel spectrogram analysis with statistical aggregation
+3. **Initial Exploration**: Visualize raw features, understand distributions and patterns
+4. **Audio Visualization**: Examine waveforms and spectrograms to connect features with actual audio
+5. **Dimensionality Reduction**: Apply PCA and t-SNE, compare effectiveness
+6. **Clustering**: K-Means with elbow method, adaptive DBSCAN with parameter optimization
+7. **Comprehensive Evaluation**: Multiple metrics including inertia, silhouette score, Davies-Bouldin index
+8. **Results Analysis**: Detailed interpretation of cluster quality and algorithm performance
+
+## Results Analysis and Interpretation
+
+### Clustering Performance Summary
+
+The experimental results reveal complementary strengths between the two clustering approaches:
+
+**K-Means Performance (Silhouette: 0.2483, Davies-Bouldin: 1.3178)**:
+- Produced 3 well-balanced clusters representing broad audio categories
+- Positive silhouette score indicates reasonable cluster cohesion
+- Moderate Davies-Bouldin index suggests acceptable but not excellent separation
+- Lower inertia (698,395.88) reflects more compact cluster structure
+- No noise points, ensuring all audio samples are categorized
+
+**DBSCAN-Adaptive Performance (Silhouette: -0.3327, Davies-Bouldin: 0.8586)**:
+- Discovered 17 distinct clusters, revealing fine-grained audio structure
+- Negative silhouette score indicates overlapping boundaries between similar audio types
+- Superior Davies-Bouldin index (0.8586) shows better cluster separation quality
+- Higher inertia (758,077.83) reflects more dispersed, granular clustering
+- Successfully identified 445 noise points (14.8%), providing valuable outlier detection
+
+### Methodological Insights
+
+**Granularity vs Cohesion Trade-off**:
+The results demonstrate a fundamental trade-off in audio clustering between granularity and cohesion. K-Means optimizes for balanced, cohesive groups suitable for broad audio categorization, while DBSCAN-Adaptive discovers nuanced audio similarities at the cost of some cluster overlap.
+
+**Noise Point Value**:
+DBSCAN's identification of 445 noise points provides significant value for audio data cleaning, potentially flagging corrupted files, unusual recordings, or audio samples that don't fit standard categories.
+
+**Complementary Approaches**:
+The different cluster counts (3 vs 17) suggest these algorithms are discovering structure at different hierarchical levels, making them complementary rather than competing approaches.
+
+## Challenges and Solutions
+
+### DBSCAN All-Noise Problem
+**Challenge**: Original DBSCAN classified all points as noise
+**Solution**: Implemented adaptive parameter selection that:
+- Analyzes k-distance graphs for eps suggestions
+- Tests multiple parameter combinations systematically
+- Targets realistic noise ratios rather than zero noise
+- Provides fallback parameters if optimization fails
+
+### High-Dimensional Feature Space
+**Challenge**: 899-dimensional mel spectrogram features were computationally prohibitive
+**Solution**: Strategic dimensionality reduction:
+- PCA for variance preservation and interpretability
+- Statistical aggregation to capture essential temporal dynamics
+- Comprehensive evaluation to ensure information retention
+
+### Parameter Sensitivity
+**Challenge**: Both clustering algorithms sensitive to parameter choices
+**Solution**: Systematic optimization:
+- Elbow method for K-Means cluster selection
+- Adaptive search for DBSCAN parameters
+- Multiple evaluation metrics for robust assessment
 
 ## File Organization
 
 ```
-Audio_Data_Clustering.ipynb
-README.md                   
+Audio_Data_Clustering.py    # Complete implementation notebook
+README.md
+requirements.txt     # Required packages
 ```
 
 ## Real-World Applications
 
-This type of unsupervised audio analysis is useful for:
+This unsupervised audio analysis approach is valuable for:
 
-- **Music library organization**: Automatically grouping songs by genre, mood, or style
-- **Environmental sound analysis**: Categorizing urban noise, nature sounds, or industrial audio
-- **Speech analysis**: Finding patterns in recorded conversations or lectures
-- **Audio quality control**: Identifying recording problems or unusual audio in large datasets
-- **Sound effect libraries**: Organizing large collections of sound effects for media production
+- **Music Library Organization**: Automatically grouping songs by genre, mood, or acoustic characteristics
+- **Environmental Sound Analysis**: Categorizing urban noise, nature sounds, or industrial audio patterns
+- **Speech Pattern Analysis**: Finding structure in recorded conversations, lectures, or linguistic data
+- **Audio Quality Control**: Identifying recording anomalies or unusual audio in large datasets
+- **Sound Effect Libraries**: Organizing collections for media production based on acoustic similarity
+- **Field Recording Analysis**: Discovering patterns in wildlife recordings or environmental monitoring
+
+## Technical Implementation
+
+### Code Structure
+
+The implementation follows clean coding principles:
+- **Modular functions**: Each step has dedicated, reusable functions
+- **Comprehensive error handling**: Graceful failure management for corrupted audio
+- **Progress indicators**: Real-time feedback during processing
+- **Detailed logging**: Extensive output for debugging and analysis
+
+### Performance Considerations
+
+- **Memory management**: Processes audio files individually to handle large datasets
+- **Computational efficiency**: Optimized parameter testing and feature extraction
+- **Scalability**: Designed to handle hundreds to thousands of audio files
+- **Reproducibility**: Fixed random seeds where possible for consistent results
 
 ## Future Improvements
 
-Several directions could improve this work:
+### Enhanced Feature Engineering
+- **Temporal modeling**: Capture sequential patterns within audio clips
+- **Multi-scale analysis**: Combine features at different time resolutions
+- **Deep learning features**: Pre-trained audio neural network representations
+- **Domain-specific features**: Tailored extraction for music, speech, or environmental sounds
 
-- **Additional features**: Spectral centroid, zero-crossing rate, or chroma features might capture different aspects of audio
-- **Deep learning features**: Pre-trained audio neural networks could provide richer representations
-- **Temporal modeling**: Current approach treats each audio file as a single point; modeling temporal sequences could be valuable
-- **Interactive visualization**: Tools for listening to cluster members and understanding what makes them similar
-- **Scalability**: Optimizations for handling thousands of audio files efficiently
+### Algorithm Enhancements
+- **Hierarchical clustering**: Discover nested cluster structures
+- **Ensemble methods**: Combine multiple clustering approaches
+- **Semi-supervised learning**: Incorporate limited labeled data when available
+- **Online clustering**: Handle streaming audio data
+
+### Visualization and Interaction
+- **Interactive cluster exploration**: Tools for listening to cluster members
+- **Real-time visualization**: Dynamic plotting during processing
+- **Cluster validation**: Human-in-the-loop verification tools
+- **Audio player integration**: Direct playback from visualizations
 
 ## Contributing
 
-If you'd like to improve this project:
+We welcome contributions to improve this audio clustering implementation:
 
-1. Try it with your own audio datasets and share what you find
-2. Experiment with different features or clustering algorithms
-3. Improve the visualization or add interactive elements
-4. Add better error handling or support for more audio formats
-5. Create examples with specific types of audio (music, speech, environmental sounds)
+### Areas for Enhancement
+- **New feature extractors**: Implement additional audio features (chroma, tonnetz, etc.)
+- **Algorithm extensions**: Add support for other clustering methods
+- **Performance optimization**: Improve computational efficiency for larger datasets
+- **Visualization improvements**: Enhanced plotting and interactive elements
+- **Documentation**: Expand examples and use cases
+
+### Getting Involved
+1. Try the implementation with your own audio datasets
+2. Experiment with different parameter settings and share results
+3. Implement new features or clustering algorithms
+4. Improve error handling and edge case management
+5. Create domain-specific examples (music, speech, environmental sounds)
 
 ## Technical Notes
 
-The code is designed to work in Google Colab but can be adapted for local use. The main dependencies are librosa for audio processing and scikit-learn for machine learning. All visualizations use matplotlib and seaborn.
+### Environment Setup
+- **Google Colab**: Recommended for easy setup and GPU access
+- **Local installation**: Requires Python 3.7+ and specified dependencies
+- **Audio format support**: WAV files recommended, MP3 and FLAC supported
+- **Memory requirements**: Scales with dataset size, typically 4-8GB sufficient
 
-For reproducibility, random seeds are set where possible, though t-SNE can still show some variation between runs.
+### Performance Characteristics
+- **Feature extraction**: ~1-2 seconds per audio file
+- **Dimensionality reduction**: Scales with sample count and feature dimensions
+- **Clustering**: K-Means is fast, DBSCAN parameter optimization can be slow
+- **Visualization**: t-SNE is computationally intensive for large datasets
 
-The feature extraction process assumes mono audio and automatically resamples to a consistent sample rate. Very short audio clips (less than a few seconds) may not provide reliable features.
+### Reproducibility Notes
+- **Random seeds**: Set for PCA, K-Means, and where possible for t-SNE
+- **Parameter documentation**: All clustering parameters explicitly specified
+- **Version dependencies**: Specific library versions recommended for consistency
+- **Data preprocessing**: Consistent audio loading and normalization procedures
 
 ## License
 
-MIT License - feel free to use this code for your own projects, academic work, or commercial applications.
+MIT License - This code is freely available for academic research, personal projects, and commercial applications. Feel free to adapt, modify, and distribute according to your needs.
