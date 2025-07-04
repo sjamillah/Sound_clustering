@@ -125,7 +125,6 @@ Based on our experiments with unlabeled audio data:
 ```
 Audio_Data_Clustering.ipynb
 README.md                   
-data/
 ```
 
 ## Real-World Applications
