@@ -43,22 +43,28 @@ pip install librosa scikit-learn pandas numpy matplotlib seaborn
 ```python
 # Mount Google Drive and load audio files
 mount_drive()
-data_path = '/content/drive/MyDrive/unlabelled_sounds/unlabelled_sounds'
-audio_files = [os.path.join(data_path, f) for f in os.listdir(data_path) if f.endswith('.wav')]
+unlabelled_data_path = '/content/drive/MyDrive/unlabelled_sounds/unlabelled_sounds'
+audio_files = [os.path.join(unlabelled_data_path, f) 
+               for f in os.listdir(unlabelled_data_path) if f.endswith('.wav')]
 
 # Extract Mel Spectrogram features
 features_df = extract_features(audio_files)
 
-# Reduce dimensions for better clustering
-features_pca, pca_model = apply_dimensionality_reduction(features_df, method='pca', n_components=3)
+# Apply dimensionality reduction
+features_pca, pca_transformer = apply_dimensionality_reduction(features_df, method='pca', n_components=3)
+features_tsne, tsne_transformer = apply_dimensionality_reduction(features_df, method='tsne', n_components=3)
 
 # Perform clustering
-kmeans_labels, kmeans_model = perform_kmeans_clustering(features_pca, n_clusters=3)
+optimal_k = 3
+kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+kmeans_labels = kmeans.fit_predict(features_pca)
+
+# Adaptive DBSCAN clustering
 dbscan_labels, dbscan_model = adaptive_dbscan_clustering(features_pca, target_noise_ratio=0.15)
 
-# Evaluate results
-kmeans_results = evaluate_clustering_performance(features_pca, kmeans_labels, kmeans_model, "K-MEANS")
-dbscan_results = evaluate_clustering_performance(features_pca, dbscan_labels, dbscan_model, "DBSCAN")
+# Comprehensive evaluation
+kmeans_results = evaluate_clustering_performance(features_pca, kmeans_labels, kmeans, "K-MEANS")
+dbscan_results = evaluate_clustering_performance(features_pca, dbscan_labels, dbscan_model, "DBSCAN-ADAPTIVE")
 ```
 
 ## How It Works
@@ -192,13 +198,11 @@ The different cluster counts (3 vs 17) suggest these algorithms are discovering 
 
 ## Challenges and Solutions
 
-### DBSCAN All-Noise Problem
-**Challenge**: Original DBSCAN classified all points as noise
-**Solution**: Implemented adaptive parameter selection that:
-- Analyzes k-distance graphs for eps suggestions
-- Tests multiple parameter combinations systematically
-- Targets realistic noise ratios rather than zero noise
-- Provides fallback parameters if optimization fails
+### DBSCAN Over-fragmentation Challenge
+**Challenge**: DBSCAN produced 17 small clusters with negative silhouette score
+**Analysis**: The density-based approach over-fragmented the mel spectrogram feature space
+**Finding**: While DBSCAN achieved better Davies-Bouldin separation (0.8586), the 17 clusters were too granular for practical audio categorization
+**Insight**: Audio features after statistical aggregation don't exhibit the distinct density regions that DBSCAN requires for optimal performance
 
 ### High-Dimensional Feature Space
 **Challenge**: 899-dimensional mel spectrogram features were computationally prohibitive
@@ -217,9 +221,9 @@ The different cluster counts (3 vs 17) suggest these algorithms are discovering 
 ## File Organization
 
 ```
-Audio_Data_Clustering.py    # Complete implementation notebook
-README.md
-requirements.txt     # Required packages
+audio_data_clustering.ipynb        # Complete implementation notebook
+README.md                       # This documentation
+requirements.txt      # packages needed
 ```
 
 ## Real-World Applications
@@ -235,13 +239,33 @@ This unsupervised audio analysis approach is valuable for:
 
 ## Technical Implementation
 
-### Code Structure
+### Key Implementation Features
 
-The implementation follows clean coding principles:
-- **Modular functions**: Each step has dedicated, reusable functions
-- **Comprehensive error handling**: Graceful failure management for corrupted audio
-- **Progress indicators**: Real-time feedback during processing
-- **Detailed logging**: Extensive output for debugging and analysis
+The implementation includes several important components:
+
+**Robust Feature Extraction**:
+- Progress indicators during processing (`if (i + 1) % 10 == 0: print(...)`)
+- Comprehensive error handling for corrupted audio files
+- Detailed logging of successful vs failed extractions
+- Automatic creation of descriptive feature names
+
+**Adaptive Parameter Optimization**:
+- Systematic k-distance analysis for eps estimation
+- Multiple percentile suggestions (70th, 80th, 90th)
+- Extensive parameter grid search with progress tracking
+- Automatic fallback to conservative parameters if optimization fails
+
+**Comprehensive Visualization Suite**:
+- 2D and 3D scatter plots with cluster coloring
+- Waveform and mel spectrogram visualizations
+- Pair plots for initial feature exploration
+- Comparison charts for algorithm performance metrics
+
+**Professional Evaluation Framework**:
+- Multiple clustering quality metrics (silhouette, Davies-Bouldin, inertia)
+- Detailed cluster analysis with sizes and characteristics
+- Performance interpretation with threshold guidelines
+- Structured comparison tables and visualizations
 
 ### Performance Considerations
 
